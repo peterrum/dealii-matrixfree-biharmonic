@@ -35,6 +35,7 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparse_direct.h>
@@ -152,6 +153,7 @@ namespace Step47
     BiharmonicProblem(const unsigned int fe_degree);
 
     void run();
+    void vmult(Vector<double> &dst, const Vector<double> &src) const;
 
   private:
     void make_grid();
@@ -738,6 +740,14 @@ namespace Step47
 
 
 
+  template <int dim>
+  void BiharmonicProblem<dim>::vmult(Vector<double> &dst, const Vector<double> &src) const
+  {
+      system_matrix.vmult(dst, src);
+  }
+  
+  
+  
   // @sect4{Solving the linear system and postprocessing}
   //
   // The show is essentially over at this point: The remaining functions are
@@ -747,10 +757,13 @@ namespace Step47
   void BiharmonicProblem<dim>::solve()
   {
     std::cout << "   Solving system..." << std::endl;
+    
+    assemble_system();
 
-    SparseDirectUMFPACK A_direct;
-    A_direct.initialize(system_matrix);
-    A_direct.vmult(solution, system_rhs);
+    ReductionControl reduction_cotrol(100, 1e-10, 1e-10);
+    SolverCG<Vector<double>> solver(reduction_cotrol);
+    
+    solver.solve(*this, solution, system_rhs, PreconditionIdentity());
 
     constraints.distribute(solution);
   }
@@ -884,7 +897,7 @@ namespace Step47
   {
     make_grid();
 
-    const unsigned int n_cycles = 4;
+    const unsigned int n_cycles = 2;
     for (unsigned int cycle = 0; cycle < n_cycles; ++cycle)
       {
         std::cout << "Cycle " << cycle << " of " << n_cycles << std::endl;
@@ -892,7 +905,6 @@ namespace Step47
         triangulation.refine_global(1);
         setup_system();
 
-        assemble_system();
         solve();
 
         output_results(cycle);
