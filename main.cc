@@ -62,6 +62,9 @@
 // This class will be quite useful in evaluating the penalty terms that appear
 // in the C0IP formulation.
 
+#include <deal.II/base/conditional_ostream.h>
+#include <deal.II/base/mpi.h>
+#include <deal.II/distributed/tria.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 #include <deal.II/matrix_free/matrix_free.h>
 
@@ -152,20 +155,24 @@ namespace Step47
   class BiharmonicProblem
   {
   public:
+      using VectorType = LinearAlgebra::distributed::Vector<double>;
+      
     BiharmonicProblem(const unsigned int fe_degree);
 
     void run();
-    void vmult(Vector<double> &dst, const Vector<double> &src) const;
+    void vmult(VectorType &dst, const VectorType &src) const;
 
   private:
     void make_grid();
     void setup_system();
-    void compute_rhs(Vector<double> &dst) const;
+    void compute_rhs(VectorType &dst) const;
     void solve();
     void compute_errors();
     void output_results(const unsigned int iteration) const;
+    
+    ConditionalOStream pcout;
 
-    Triangulation<dim> triangulation;
+    parallel::distributed::Triangulation<dim> triangulation;
 
     MappingQ<dim> mapping;
 
@@ -173,8 +180,8 @@ namespace Step47
     DoFHandler<dim>           dof_handler;
     AffineConstraints<double> constraints;
 
-    Vector<double> solution;
-    Vector<double> system_rhs;
+    VectorType solution;
+    VectorType system_rhs;
     
     MatrixFree<dim> matrix_free;
   };
@@ -183,7 +190,7 @@ namespace Step47
 
   template <int dim>
   BiharmonicProblem<dim>::BiharmonicProblem(const unsigned int fe_degree)
-    : mapping(1)
+    : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)==0), triangulation(MPI_COMM_WORLD), mapping(1)
     , fe(fe_degree)
     , dof_handler(triangulation)
   {}
@@ -200,7 +207,7 @@ namespace Step47
     GridGenerator::hyper_cube(triangulation, 0., 1.);
     triangulation.refine_global(1);
 
-    std::cout << "Number of active cells: " << triangulation.n_active_cells()
+    pcout << "Number of active cells: " << triangulation.n_active_cells()
               << std::endl
               << "Total number of cells: " << triangulation.n_cells()
               << std::endl;
@@ -213,7 +220,7 @@ namespace Step47
   {
     dof_handler.distribute_dofs(fe);
 
-    std::cout << "   Number of degrees of freedom: " << dof_handler.n_dofs()
+    pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs()
               << std::endl;
 
     constraints.clear();
@@ -224,25 +231,25 @@ namespace Step47
                                              ExactSolution::Solution<dim>(),
                                              constraints);
     constraints.close();
-
-    solution.reinit(dof_handler.n_dofs());
-    system_rhs.reinit(dof_handler.n_dofs());
     
     typename MatrixFree<dim>::AdditionalData additional_data;
     additional_data.mapping_update_flags = update_quadrature_points | update_values;
     additional_data.mapping_update_flags_inner_faces = update_default;
     additional_data.mapping_update_flags_boundary_faces = update_quadrature_points | update_gradients | update_hessians;
     matrix_free.reinit(mapping, dof_handler, constraints, QGauss<1>(fe.degree + 1), additional_data);
+
+    matrix_free.initialize_dof_vector(solution);
+    matrix_free.initialize_dof_vector(system_rhs);
   }
 
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::vmult(Vector<double> &dst, const Vector<double> &src) const
+  void BiharmonicProblem<dim>::vmult(VectorType &dst, const VectorType &src) const
   {
       dst = 0.0;
       
-      matrix_free.template loop <Vector<double>, Vector<double>>(
+      matrix_free.template loop <VectorType, VectorType>(
       [](const auto & data, auto & dst, const auto & src, const auto cell_range){
           FEEvaluation<dim, -1, 0, 1, double> phi(data);
           
@@ -354,16 +361,16 @@ namespace Step47
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::compute_rhs(Vector<double> &dst) const
+  void BiharmonicProblem<dim>::compute_rhs(VectorType &dst) const
   {
       dst = 0.0;
       
-      Vector<double> dummy;
+      VectorType dummy;
       
       const ExactSolution::RightHandSide<dim> right_hand_side;
       const ExactSolution::Solution<dim> exact_solution;
       
-      matrix_free.template loop <Vector<double>, Vector<double>>(
+      matrix_free.template loop <VectorType, VectorType>(
       [&](const auto & data, auto & dst, const auto & , const auto cell_range){
           FEEvaluation<dim, -1, 0, 1, double> phi(data);
           
@@ -451,13 +458,14 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::solve()
   {
-    std::cout << "   Solving system..." << std::endl;
+    pcout << "   Solving system..." << std::endl;
     
     compute_rhs(system_rhs);
 
     ReductionControl reduction_cotrol(100, 1e-10, 1e-10);
-    SolverCG<Vector<double>> solver(reduction_cotrol);
+    SolverCG<VectorType> solver(reduction_cotrol);
     
+    // TODO: need a better preconditioner
     solver.solve(*this, solution, system_rhs, PreconditionIdentity());
 
     constraints.distribute(solution);
@@ -473,6 +481,7 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::compute_errors()
   {
+      solution.update_ghost_values();
     {
       Vector<float> norm_per_cell(triangulation.n_active_cells());
       VectorTools::integrate_difference(mapping,
@@ -486,7 +495,7 @@ namespace Step47
         VectorTools::compute_global_error(triangulation,
                                           norm_per_cell,
                                           VectorTools::L2_norm);
-      std::cout << "   Error in the L2 norm           :     " << error_norm
+      pcout << "   Error in the L2 norm           :     " << error_norm
                 << std::endl;
     }
 
@@ -503,7 +512,7 @@ namespace Step47
         VectorTools::compute_global_error(triangulation,
                                           norm_per_cell,
                                           VectorTools::H1_seminorm);
-      std::cout << "   Error in the H1 seminorm       : " << error_norm
+      pcout << "   Error in the H1 seminorm       : " << error_norm
                 << std::endl;
     }
 
@@ -539,6 +548,7 @@ namespace Step47
       std::vector<SymmetricTensor<2, dim>> exact_hessians(n_q_points);
       std::vector<Tensor<2, dim>>          hessians(n_q_points);
       for (auto &cell : dof_handler.active_cell_iterators())
+          if(cell->is_locally_owned())
         {
           fe_values.reinit(cell);
           fe_values[scalar].get_function_hessians(solution, hessians);
@@ -555,10 +565,14 @@ namespace Step47
           error_per_cell[cell->active_cell_index()] = std::sqrt(local_error);
         }
 
-      const double error_norm = error_per_cell.l2_norm();
-      std::cout << "   Error in the broken H2 seminorm: " << error_norm
+      const double error_norm =
+        VectorTools::compute_global_error(triangulation,
+                                          error_per_cell,
+                                          VectorTools::L2_norm);
+      pcout << "   Error in the broken H2 seminorm: " << error_norm
                 << std::endl;
     }
+      solution.zero_out_ghost_values();
   }
 
 
@@ -569,7 +583,7 @@ namespace Step47
   void
   BiharmonicProblem<dim>::output_results(const unsigned int iteration) const
   {
-    std::cout << "   Writing graphical output..." << std::endl;
+    pcout << "   Writing graphical output..." << std::endl;
 
     DataOut<dim> data_out;
 
@@ -595,7 +609,7 @@ namespace Step47
     const unsigned int n_cycles = 2;
     for (unsigned int cycle = 0; cycle < n_cycles; ++cycle)
       {
-        std::cout << "Cycle " << cycle << " of " << n_cycles << std::endl;
+        pcout << "Cycle " << cycle << " of " << n_cycles << std::endl;
 
         triangulation.refine_global(1);
         setup_system();
@@ -605,7 +619,7 @@ namespace Step47
         output_results(cycle);
 
         compute_errors();
-        std::cout << std::endl;
+        pcout << std::endl;
       }
   }
 } // namespace Step47
@@ -621,12 +635,14 @@ namespace Step47
 // we use requires the element degree to be at least two, we check with
 // an assertion that whatever one sets for the polynomial degree actually
 // makes sense.
-int main()
+int main(int argc, char **argv)
 {
   try
     {
       using namespace dealii;
       using namespace Step47;
+      
+      Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
       const unsigned int fe_degree = 2;
       Assert(fe_degree >= 2,
