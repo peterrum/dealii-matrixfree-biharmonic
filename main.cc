@@ -295,6 +295,28 @@ namespace Step47
 
 
 
+  template <int dim,
+            int fe_degree,
+            int n_q_points_1d,
+            int n_components,
+            typename Number,
+            typename VectorizedArrayType>
+  void submit_normal_hessian(FEFaceEvaluation<dim,
+                                              fe_degree,
+                                              n_q_points_1d,
+                                              n_components,
+                                              Number,
+                                              VectorizedArrayType> &phi,
+                             const VectorizedArrayType &            value,
+                             unsigned int                           q)
+  {
+    phi.submit_hessian(value * outer_product(phi.get_normal_vector(q),
+                                             phi.get_normal_vector(q)),
+                       q);
+  }
+
+
+
   template <int dim>
   void BiharmonicProblem<dim>::vmult(VectorType &      dst,
                                      const VectorType &src) const
@@ -346,23 +368,13 @@ namespace Step47
                                  outer_product(phi_m.get_normal_vector(q),
                                                phi_m.get_normal_vector(q)));
 
-                // TODO: need submit_normal_hessian
-                phi_m.submit_hessian(-0.5 * jmp_normal_derivative *
-                                       outer_product(phi_m.get_normal_vector(q),
-                                                     phi_m.get_normal_vector(
-                                                       q)),
-                                     q);
+                submit_normal_hessian(phi_m, -0.5 * jmp_normal_derivative, q);
                 phi_m.submit_normal_derivative(-avg_normal_hessian +
                                                  gamma_over_h[face] *
                                                    jmp_normal_derivative,
                                                q);
 
-                // TODO: need submit_normal_hessian
-                phi_p.submit_hessian(-0.5 * jmp_normal_derivative *
-                                       outer_product(phi_m.get_normal_vector(q),
-                                                     phi_m.get_normal_vector(
-                                                       q)),
-                                     q);
+                submit_normal_hessian(phi_p, -0.5 * jmp_normal_derivative, q);
                 phi_p.submit_normal_derivative(+avg_normal_hessian -
                                                  gamma_over_h[face] *
                                                    jmp_normal_derivative,
@@ -392,11 +404,7 @@ namespace Step47
                 const auto normal_derivative = phi.get_normal_derivative(q);
                 const auto hessian           = phi.get_hessian(q);
 
-                // TODO: need submit_normal_hessian
-                phi.submit_hessian((-normal_derivative) *
-                                     outer_product(phi.get_normal_vector(q),
-                                                   phi.get_normal_vector(q)),
-                                   q);
+                submit_normal_hessian(phi, -normal_derivative, q);
 
                 // TODO: need get_normal_hessian
                 phi.submit_normal_derivative(
@@ -482,11 +490,9 @@ namespace Step47
                       f_grad[d][v] = temp[d];
                   }
 
-                // TODO: need submit_normal_hessian
-                phi.submit_hessian((-f_grad * phi.get_normal_vector(q)) *
-                                     outer_product(phi.get_normal_vector(q),
-                                                   phi.get_normal_vector(q)),
-                                   q);
+                submit_normal_hessian(phi,
+                                      -f_grad * phi.get_normal_vector(q),
+                                      q);
                 phi.submit_normal_derivative(gamma_over_h[face] * f_grad *
                                                phi.get_normal_vector(q),
                                              q);
