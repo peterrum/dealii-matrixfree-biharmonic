@@ -187,6 +187,8 @@ namespace Step47
     VectorType system_rhs;
 
     MatrixFree<dim> matrix_free;
+
+    AlignedVector<VectorizedArray<double>> gamma_over_h;
   };
 
 
@@ -250,6 +252,45 @@ namespace Step47
 
     matrix_free.initialize_dof_vector(solution);
     matrix_free.initialize_dof_vector(system_rhs);
+
+    gamma_over_h.resize(matrix_free.n_inner_face_batches() +
+                        matrix_free.n_boundary_face_batches());
+
+    for (unsigned int face = 0; face < matrix_free.n_inner_face_batches();
+         ++face)
+      for (unsigned int v = 0;
+           v < matrix_free.n_active_entries_per_face_batch(face);
+           ++v)
+        {
+          const auto p     = fe.degree;
+          const auto cell  = matrix_free.get_face_iterator(face, v, true);
+          const auto ncell = matrix_free.get_face_iterator(face, v, false);
+
+          gamma_over_h[face][v] = std::max(
+            (1.0 * p * (p + 1) /
+             cell.first->extent_in_direction(
+               GeometryInfo<dim>::unit_normal_direction[cell.second])),
+            (1.0 * p * (p + 1) /
+             ncell.first->extent_in_direction(
+               GeometryInfo<dim>::unit_normal_direction[ncell.second])));
+        }
+
+    for (unsigned int face = matrix_free.n_inner_face_batches();
+         face < matrix_free.n_inner_face_batches() +
+                  matrix_free.n_boundary_face_batches();
+         ++face)
+      for (unsigned int v = 0;
+           v < matrix_free.n_active_entries_per_face_batch(face);
+           ++v)
+        {
+          const auto p    = fe.degree;
+          const auto cell = matrix_free.get_face_iterator(face, v);
+
+          gamma_over_h[face][v] =
+            (1.0 * p * (p + 1) /
+             cell.first->extent_in_direction(
+               GeometryInfo<dim>::unit_normal_direction[cell.second]));
+        }
   }
 
 
@@ -292,26 +333,6 @@ namespace Step47
                                   EvaluationFlags::gradients |
                                     EvaluationFlags::hessians);
 
-            VectorizedArray<double> gamma_over_h = 0.0;
-
-            // compute penalty parameter (TODO: pre-compute)
-            for (unsigned int v = 0;
-                 v < data.n_active_entries_per_face_batch(face);
-                 ++v)
-              {
-                const auto p     = fe.degree;
-                const auto cell  = data.get_face_iterator(face, v, true);
-                const auto ncell = data.get_face_iterator(face, v, false);
-
-                gamma_over_h[v] = std::max(
-                  (1.0 * p * (p + 1) /
-                   cell.first->extent_in_direction(
-                     GeometryInfo<dim>::unit_normal_direction[cell.second])),
-                  (1.0 * p * (p + 1) /
-                   ncell.first->extent_in_direction(
-                     GeometryInfo<dim>::unit_normal_direction[ncell.second])));
-              }
-
             for (unsigned int q = 0; q < phi_m.n_q_points; ++q)
               {
                 const auto jmp_normal_derivative =
@@ -332,7 +353,7 @@ namespace Step47
                                                        q)),
                                      q);
                 phi_m.submit_normal_derivative(-avg_normal_hessian +
-                                                 gamma_over_h *
+                                                 gamma_over_h[face] *
                                                    jmp_normal_derivative,
                                                q);
 
@@ -343,7 +364,7 @@ namespace Step47
                                                        q)),
                                      q);
                 phi_p.submit_normal_derivative(+avg_normal_hessian -
-                                                 gamma_over_h *
+                                                 gamma_over_h[face] *
                                                    jmp_normal_derivative,
                                                q);
               }
@@ -366,22 +387,6 @@ namespace Step47
                                 EvaluationFlags::gradients |
                                   EvaluationFlags::hessians);
 
-            VectorizedArray<double> gamma_over_h = 0.0;
-
-            // compute penalty parameter (TODO: pre-compute)
-            for (unsigned int v = 0;
-                 v < data.n_active_entries_per_face_batch(face);
-                 ++v)
-              {
-                const auto p    = fe.degree;
-                const auto cell = data.get_face_iterator(face, v);
-
-                gamma_over_h[v] =
-                  (1.0 * p * (p + 1) /
-                   cell.first->extent_in_direction(
-                     GeometryInfo<dim>::unit_normal_direction[cell.second]));
-              }
-
             for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
                 const auto normal_derivative = phi.get_normal_derivative(q);
@@ -398,7 +403,7 @@ namespace Step47
                   -scalar_product(hessian,
                                   outer_product(phi.get_normal_vector(q),
                                                 phi.get_normal_vector(q))) +
-                    gamma_over_h * normal_derivative,
+                    gamma_over_h[face] * normal_derivative,
                   q);
               }
 
@@ -460,22 +465,6 @@ namespace Step47
           {
             phi.reinit(face);
 
-            VectorizedArray<double> gamma_over_h = 0.0;
-
-            // compute penalty parameter (TODO: pre-compute)
-            for (unsigned int v = 0;
-                 v < data.n_active_entries_per_face_batch(face);
-                 ++v)
-              {
-                const auto p    = fe.degree;
-                const auto cell = data.get_face_iterator(face, v);
-
-                gamma_over_h[v] =
-                  (1.0 * p * (p + 1) /
-                   cell.first->extent_in_direction(
-                     GeometryInfo<dim>::unit_normal_direction[cell.second]));
-              }
-
             for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
                 const auto p_vect = phi.quadrature_point(q);
@@ -493,11 +482,12 @@ namespace Step47
                       f_grad[d][v] = temp[d];
                   }
 
+                // TODO: need submit_normal_hessian
                 phi.submit_hessian((-f_grad * phi.get_normal_vector(q)) *
                                      outer_product(phi.get_normal_vector(q),
                                                    phi.get_normal_vector(q)),
                                    q);
-                phi.submit_normal_derivative(gamma_over_h * f_grad *
+                phi.submit_normal_derivative(gamma_over_h[face] * f_grad *
                                                phi.get_normal_vector(q),
                                              q);
               }
