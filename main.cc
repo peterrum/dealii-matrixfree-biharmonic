@@ -317,6 +317,27 @@ namespace Step47
 
 
 
+  template <int dim,
+            int fe_degree,
+            int n_q_points_1d,
+            int n_components,
+            typename Number,
+            typename VectorizedArrayType>
+  VectorizedArrayType
+  get_normal_hessian(FEFaceEvaluation<dim,
+                                      fe_degree,
+                                      n_q_points_1d,
+                                      n_components,
+                                      Number,
+                                      VectorizedArrayType> &phi,
+                     unsigned int                           q)
+  {
+    return phi.get_normal_vector(q) * phi.get_hessian(q) *
+           phi.get_normal_vector(q);
+  }
+
+
+
   template <int dim>
   void BiharmonicProblem<dim>::vmult(VectorType &      dst,
                                      const VectorType &src) const
@@ -361,12 +382,9 @@ namespace Step47
                   ((phi_m.get_normal_derivative(q) -
                     phi_p.get_normal_derivative(q)));
 
-                // TODO: need get_normal_hessian
                 const auto avg_normal_hessian =
                   0.5 *
-                  scalar_product((phi_m.get_hessian(q) + phi_p.get_hessian(q)),
-                                 outer_product(phi_m.get_normal_vector(q),
-                                               phi_m.get_normal_vector(q)));
+                  (get_normal_hessian(phi_m, q) + get_normal_hessian(phi_p, q));
 
                 submit_normal_hessian(phi_m, -0.5 * jmp_normal_derivative, q);
                 phi_m.submit_normal_derivative(-avg_normal_hessian +
@@ -402,17 +420,12 @@ namespace Step47
             for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
                 const auto normal_derivative = phi.get_normal_derivative(q);
-                const auto hessian           = phi.get_hessian(q);
+                const auto normal_hessian    = get_normal_hessian(phi, q);
 
                 submit_normal_hessian(phi, -normal_derivative, q);
 
-                // TODO: need get_normal_hessian
                 phi.submit_normal_derivative(
-                  -scalar_product(hessian,
-                                  outer_product(phi.get_normal_vector(q),
-                                                phi.get_normal_vector(q))) +
-                    gamma_over_h[face] * normal_derivative,
-                  q);
+                  -normal_hessian + gamma_over_h[face] * normal_derivative, q);
               }
 
             phi.integrate_scatter(EvaluationFlags::gradients |
