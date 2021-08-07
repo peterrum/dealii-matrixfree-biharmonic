@@ -473,9 +473,7 @@ namespace Step47
                 phi.submit_value(f_value, q);
               }
 
-            phi.integrate(EvaluationFlags::values);
-
-            phi.distribute_local_to_global(dst);
+            phi.integrate_scatter(EvaluationFlags::values, dst);
           }
       },
       [](const auto &, auto &, const auto &, const auto) {},
@@ -511,10 +509,9 @@ namespace Step47
                                              q);
               }
 
-            phi.integrate(EvaluationFlags::gradients |
-                          EvaluationFlags::hessians);
-
-            phi.distribute_local_to_global(dst);
+            phi.integrate_scatter(EvaluationFlags::gradients |
+                                    EvaluationFlags::hessians,
+                                  dst);
           }
       },
       dst,
