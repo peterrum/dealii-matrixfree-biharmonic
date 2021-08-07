@@ -29,32 +29,33 @@
 // structure of the program is very similar to that of, for example, step-4
 // and so we include many of the same header files.
 
-#include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
+#include <deal.II/base/quadrature_lib.h>
 
-#include <deal.II/lac/vector.h>
-#include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/precondition.h>
-#include <deal.II/lac/solver_cg.h>
-#include <deal.II/lac/sparse_matrix.h>
-#include <deal.II/lac/sparse_direct.h>
-
-#include <deal.II/grid/tria.h>
-#include <deal.II/grid/grid_generator.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_tools.h>
 
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/mapping_q.h>
 
-#include <deal.II/dofs/dof_handler.h>
-#include <deal.II/dofs/dof_tools.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/tria.h>
 
-#include <deal.II/numerics/vector_tools.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/precondition.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/vector.h>
+
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/vector_tools.h>
 
 // The two most interesting header files will be these two:
 #include <deal.II/fe/fe_interface_values.h>
+
 #include <deal.II/meshworker/mesh_loop.h>
 // The first of these is responsible for providing the class FEInterfaceValues
 // that can be used to evaluate quantities such as the jump or average
@@ -64,13 +65,15 @@
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/mpi.h>
+
 #include <deal.II/distributed/tria.h>
+
 #include <deal.II/matrix_free/fe_evaluation.h>
 #include <deal.II/matrix_free/matrix_free.h>
 
+#include <cmath>
 #include <fstream>
 #include <iostream>
-#include <cmath>
 
 
 namespace Step47
@@ -155,8 +158,8 @@ namespace Step47
   class BiharmonicProblem
   {
   public:
-      using VectorType = LinearAlgebra::distributed::Vector<double>;
-      
+    using VectorType = LinearAlgebra::distributed::Vector<double>;
+
     BiharmonicProblem(const unsigned int fe_degree);
 
     void run();
@@ -169,7 +172,7 @@ namespace Step47
     void solve();
     void compute_errors();
     void output_results(const unsigned int iteration) const;
-    
+
     ConditionalOStream pcout;
 
     parallel::distributed::Triangulation<dim> triangulation;
@@ -182,7 +185,7 @@ namespace Step47
 
     VectorType solution;
     VectorType system_rhs;
-    
+
     MatrixFree<dim> matrix_free;
   };
 
@@ -190,7 +193,9 @@ namespace Step47
 
   template <int dim>
   BiharmonicProblem<dim>::BiharmonicProblem(const unsigned int fe_degree)
-    : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)==0), triangulation(MPI_COMM_WORLD), mapping(1)
+    : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    , triangulation(MPI_COMM_WORLD)
+    , mapping(1)
     , fe(fe_degree)
     , dof_handler(triangulation)
   {}
@@ -208,9 +213,8 @@ namespace Step47
     triangulation.refine_global(1);
 
     pcout << "Number of active cells: " << triangulation.n_active_cells()
-              << std::endl
-              << "Total number of cells: " << triangulation.n_cells()
-              << std::endl;
+          << std::endl
+          << "Total number of cells: " << triangulation.n_cells() << std::endl;
   }
 
 
@@ -221,7 +225,7 @@ namespace Step47
     dof_handler.distribute_dofs(fe);
 
     pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs()
-              << std::endl;
+          << std::endl;
 
     constraints.clear();
     DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -231,12 +235,18 @@ namespace Step47
                                              ExactSolution::Solution<dim>(),
                                              constraints);
     constraints.close();
-    
+
     typename MatrixFree<dim>::AdditionalData additional_data;
-    additional_data.mapping_update_flags = update_quadrature_points | update_values;
+    additional_data.mapping_update_flags =
+      update_quadrature_points | update_values;
     additional_data.mapping_update_flags_inner_faces = update_default;
-    additional_data.mapping_update_flags_boundary_faces = update_quadrature_points | update_gradients | update_hessians;
-    matrix_free.reinit(mapping, dof_handler, constraints, QGauss<1>(fe.degree + 1), additional_data);
+    additional_data.mapping_update_flags_boundary_faces =
+      update_quadrature_points | update_gradients | update_hessians;
+    matrix_free.reinit(mapping,
+                       dof_handler,
+                       constraints,
+                       QGauss<1>(fe.degree + 1),
+                       additional_data);
 
     matrix_free.initialize_dof_vector(solution);
     matrix_free.initialize_dof_vector(system_rhs);
@@ -245,117 +255,160 @@ namespace Step47
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::vmult(VectorType &dst, const VectorType &src) const
+  void BiharmonicProblem<dim>::vmult(VectorType &      dst,
+                                     const VectorType &src) const
   {
-      dst = 0.0;
-      
-      matrix_free.template loop <VectorType, VectorType>(
-      [](const auto & data, auto & dst, const auto & src, const auto cell_range){
-          FEEvaluation<dim, -1, 0, 1, double> phi(data);
-          
-          for(auto cell = cell_range.first; cell < cell_range.second; ++cell)
+    dst = 0.0;
+
+    matrix_free.template loop<VectorType, VectorType>(
+      [](const auto &data, auto &dst, const auto &src, const auto cell_range) {
+        FEEvaluation<dim, -1, 0, 1, double> phi(data);
+
+        for (auto cell = cell_range.first; cell < cell_range.second; ++cell)
           {
-              phi.reinit(cell);
-              
-              phi.gather_evaluate(src, EvaluationFlags::hessians);
-              
-              for(unsigned int q = 0; q < phi.n_q_points; ++q)
-                phi.submit_hessian(phi.get_hessian(q), q);
-              
-              phi.integrate_scatter(EvaluationFlags::hessians, dst);
+            phi.reinit(cell);
+
+            phi.gather_evaluate(src, EvaluationFlags::hessians);
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
+              phi.submit_hessian(phi.get_hessian(q), q);
+
+            phi.integrate_scatter(EvaluationFlags::hessians, dst);
           }
       },
-      [&](const auto & data, auto & dst, const auto & src, const auto face_range){
-          FEFaceEvaluation<dim, -1, 0, 1, double> phi_m(data, true);
-          FEFaceEvaluation<dim, -1, 0, 1, double> phi_p(data, false);
-          
-          for(auto face = face_range.first; face < face_range.second; ++face)
+      [&](const auto &data, auto &dst, const auto &src, const auto face_range) {
+        FEFaceEvaluation<dim, -1, 0, 1, double> phi_m(data, true);
+        FEFaceEvaluation<dim, -1, 0, 1, double> phi_p(data, false);
+
+        for (auto face = face_range.first; face < face_range.second; ++face)
           {
-              phi_m.reinit(face);
-              phi_p.reinit(face);
-              
-              phi_m.gather_evaluate(src, EvaluationFlags::gradients | EvaluationFlags::hessians);
-              phi_p.gather_evaluate(src, EvaluationFlags::gradients | EvaluationFlags::hessians);
-              
-              VectorizedArray<double> gamma_over_h = 0.0;
-              
-              // compute penalty parameter (TODO: pre-compute)
-              for (unsigned int v=0; v< data.n_active_entries_per_face_batch (face); ++v)
+            phi_m.reinit(face);
+            phi_p.reinit(face);
+
+            phi_m.gather_evaluate(src,
+                                  EvaluationFlags::gradients |
+                                    EvaluationFlags::hessians);
+            phi_p.gather_evaluate(src,
+                                  EvaluationFlags::gradients |
+                                    EvaluationFlags::hessians);
+
+            VectorizedArray<double> gamma_over_h = 0.0;
+
+            // compute penalty parameter (TODO: pre-compute)
+            for (unsigned int v = 0;
+                 v < data.n_active_entries_per_face_batch(face);
+                 ++v)
               {
-                const auto p    = fe.degree;
-                const auto cell = data.get_face_iterator(face, v, true);
+                const auto p     = fe.degree;
+                const auto cell  = data.get_face_iterator(face, v, true);
                 const auto ncell = data.get_face_iterator(face, v, false);
-                  
-                gamma_over_h[v] = std::max((1.0 * p * (p + 1) /
-                  cell.first->extent_in_direction(
-                    GeometryInfo<dim>::unit_normal_direction[cell.second])),
-                 (1.0 * p * (p + 1) /
-                  ncell.first->extent_in_direction(
-                    GeometryInfo<dim>::unit_normal_direction[ncell.second])));
+
+                gamma_over_h[v] = std::max(
+                  (1.0 * p * (p + 1) /
+                   cell.first->extent_in_direction(
+                     GeometryInfo<dim>::unit_normal_direction[cell.second])),
+                  (1.0 * p * (p + 1) /
+                   ncell.first->extent_in_direction(
+                     GeometryInfo<dim>::unit_normal_direction[ncell.second])));
               }
-             
-              for(unsigned int q = 0; q < phi_m.n_q_points; ++q)
+
+            for (unsigned int q = 0; q < phi_m.n_q_points; ++q)
               {
-                  const auto jmp_normal_derivative = ((phi_m.get_normal_derivative(q) - phi_p.get_normal_derivative(q)));
-                  
-                  // TODO: need get_normal_hessian
-                  const auto avg_normal_hessian = 0.5 * scalar_product((phi_m.get_hessian(q) + phi_p.get_hessian(q)),
-                          outer_product(phi_m.get_normal_vector(q), phi_m.get_normal_vector(q)));
-                  
-                  // TODO: need submit_normal_hessian
-                  phi_m.submit_hessian(- 0.5 * jmp_normal_derivative * outer_product(phi_m.get_normal_vector(q), phi_m.get_normal_vector(q)), q);
-                  phi_m.submit_normal_derivative(-avg_normal_hessian +  gamma_over_h * jmp_normal_derivative, q);
-                  
-                  // TODO: need submit_normal_hessian
-                  phi_p.submit_hessian(- 0.5 * jmp_normal_derivative * outer_product(phi_m.get_normal_vector(q), phi_m.get_normal_vector(q)), q);
-                  phi_p.submit_normal_derivative(+avg_normal_hessian -  gamma_over_h * jmp_normal_derivative, q);
+                const auto jmp_normal_derivative =
+                  ((phi_m.get_normal_derivative(q) -
+                    phi_p.get_normal_derivative(q)));
+
+                // TODO: need get_normal_hessian
+                const auto avg_normal_hessian =
+                  0.5 *
+                  scalar_product((phi_m.get_hessian(q) + phi_p.get_hessian(q)),
+                                 outer_product(phi_m.get_normal_vector(q),
+                                               phi_m.get_normal_vector(q)));
+
+                // TODO: need submit_normal_hessian
+                phi_m.submit_hessian(-0.5 * jmp_normal_derivative *
+                                       outer_product(phi_m.get_normal_vector(q),
+                                                     phi_m.get_normal_vector(
+                                                       q)),
+                                     q);
+                phi_m.submit_normal_derivative(-avg_normal_hessian +
+                                                 gamma_over_h *
+                                                   jmp_normal_derivative,
+                                               q);
+
+                // TODO: need submit_normal_hessian
+                phi_p.submit_hessian(-0.5 * jmp_normal_derivative *
+                                       outer_product(phi_m.get_normal_vector(q),
+                                                     phi_m.get_normal_vector(
+                                                       q)),
+                                     q);
+                phi_p.submit_normal_derivative(+avg_normal_hessian -
+                                                 gamma_over_h *
+                                                   jmp_normal_derivative,
+                                               q);
               }
-              
-              phi_m.integrate_scatter(EvaluationFlags::gradients | EvaluationFlags::hessians, dst);
-              phi_p.integrate_scatter(EvaluationFlags::gradients | EvaluationFlags::hessians, dst);
+
+            phi_m.integrate_scatter(EvaluationFlags::gradients |
+                                      EvaluationFlags::hessians,
+                                    dst);
+            phi_p.integrate_scatter(EvaluationFlags::gradients |
+                                      EvaluationFlags::hessians,
+                                    dst);
           }
       },
-      [&](const auto & data, auto & dst, const auto & src, const auto face_range){
-          
-          FEFaceEvaluation<dim, -1, 0, 1, double> phi(data);
-          
-          for(auto face = face_range.first; face < face_range.second; ++face)
+      [&](const auto &data, auto &dst, const auto &src, const auto face_range) {
+        FEFaceEvaluation<dim, -1, 0, 1, double> phi(data);
+
+        for (auto face = face_range.first; face < face_range.second; ++face)
           {
-              phi.reinit(face);
-              phi.gather_evaluate(src, EvaluationFlags::gradients | EvaluationFlags::hessians);
-              
-              VectorizedArray<double> gamma_over_h = 0.0;
-              
-              // compute penalty parameter (TODO: pre-compute)
-              for (unsigned int v=0; v< data.n_active_entries_per_face_batch (face); ++v)
+            phi.reinit(face);
+            phi.gather_evaluate(src,
+                                EvaluationFlags::gradients |
+                                  EvaluationFlags::hessians);
+
+            VectorizedArray<double> gamma_over_h = 0.0;
+
+            // compute penalty parameter (TODO: pre-compute)
+            for (unsigned int v = 0;
+                 v < data.n_active_entries_per_face_batch(face);
+                 ++v)
               {
                 const auto p    = fe.degree;
                 const auto cell = data.get_face_iterator(face, v);
-                  
-                gamma_over_h[v] = (1.0 * p * (p + 1) /
-                 cell.first->extent_in_direction(
-                   GeometryInfo<dim>::unit_normal_direction[cell.second]));
+
+                gamma_over_h[v] =
+                  (1.0 * p * (p + 1) /
+                   cell.first->extent_in_direction(
+                     GeometryInfo<dim>::unit_normal_direction[cell.second]));
               }
-             
-              for(unsigned int q = 0; q < phi.n_q_points; ++q)
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
-                  const auto normal_derivative = phi.get_normal_derivative(q);
-                  const auto hessian = phi.get_hessian(q);
-                  
-                  // TODO: need submit_normal_hessian
-                  phi.submit_hessian((-normal_derivative) * outer_product(phi.get_normal_vector(q), phi.get_normal_vector(q)), q);
-                  
-                  // TODO: need get_normal_hessian
-                  phi.submit_normal_derivative(
-                    -scalar_product(hessian, outer_product(phi.get_normal_vector(q), phi.get_normal_vector(q))) 
-                    + gamma_over_h * normal_derivative, q);
+                const auto normal_derivative = phi.get_normal_derivative(q);
+                const auto hessian           = phi.get_hessian(q);
+
+                // TODO: need submit_normal_hessian
+                phi.submit_hessian((-normal_derivative) *
+                                     outer_product(phi.get_normal_vector(q),
+                                                   phi.get_normal_vector(q)),
+                                   q);
+
+                // TODO: need get_normal_hessian
+                phi.submit_normal_derivative(
+                  -scalar_product(hessian,
+                                  outer_product(phi.get_normal_vector(q),
+                                                phi.get_normal_vector(q))) +
+                    gamma_over_h * normal_derivative,
+                  q);
               }
-              
-              phi.integrate_scatter(EvaluationFlags::gradients | EvaluationFlags::hessians, dst);
+
+            phi.integrate_scatter(EvaluationFlags::gradients |
+                                    EvaluationFlags::hessians,
+                                  dst);
           }
       },
-              dst, src
-      );
+      dst,
+      src);
   }
 
 
@@ -363,93 +416,104 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::compute_rhs(VectorType &dst) const
   {
-      dst = 0.0;
-      
-      VectorType dummy;
-      
-      const ExactSolution::RightHandSide<dim> right_hand_side;
-      const ExactSolution::Solution<dim> exact_solution;
-      
-      matrix_free.template loop <VectorType, VectorType>(
-      [&](const auto & data, auto & dst, const auto & , const auto cell_range){
-          FEEvaluation<dim, -1, 0, 1, double> phi(data);
-          
-          for(auto cell = cell_range.first; cell < cell_range.second; ++cell)
+    dst = 0.0;
+
+    VectorType dummy;
+
+    const ExactSolution::RightHandSide<dim> right_hand_side;
+    const ExactSolution::Solution<dim>      exact_solution;
+
+    matrix_free.template loop<VectorType, VectorType>(
+      [&](const auto &data, auto &dst, const auto &, const auto cell_range) {
+        FEEvaluation<dim, -1, 0, 1, double> phi(data);
+
+        for (auto cell = cell_range.first; cell < cell_range.second; ++cell)
           {
-              phi.reinit(cell);
-              
-              for(unsigned int q = 0; q < phi.n_q_points; ++q)
+            phi.reinit(cell);
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
-                 const  auto p_vect = phi.quadrature_point(q);
-                   VectorizedArray<double> f_value = 0.0;
-                for (unsigned int v=0; v<VectorizedArray<double>::size(); ++v)
+                const auto              p_vect  = phi.quadrature_point(q);
+                VectorizedArray<double> f_value = 0.0;
+                for (unsigned int v = 0; v < VectorizedArray<double>::size();
+                     ++v)
                   {
                     Point<dim> p;
-                    for (unsigned int d=0; d<dim; ++d)
+                    for (unsigned int d = 0; d < dim; ++d)
                       p[d] = p_vect[d][v];
                     f_value[v] = right_hand_side.value(p);
                   }
-                  
-                  phi.submit_value(f_value, q);
+
+                phi.submit_value(f_value, q);
               }
-              
-              phi.integrate(EvaluationFlags::values);
-              
-              phi.distribute_local_to_global(dst);
+
+            phi.integrate(EvaluationFlags::values);
+
+            phi.distribute_local_to_global(dst);
           }
       },
-      [](const auto &, auto & , const auto & , const auto ){},
-      [&](const auto & data, auto & dst, const auto & , const auto face_range){
-          FEFaceEvaluation<dim, -1, 0, 1, double> phi(data);
-          
-          for(auto face = face_range.first; face < face_range.second; ++face)
+      [](const auto &, auto &, const auto &, const auto) {},
+      [&](const auto &data, auto &dst, const auto &, const auto face_range) {
+        FEFaceEvaluation<dim, -1, 0, 1, double> phi(data);
+
+        for (auto face = face_range.first; face < face_range.second; ++face)
           {
-              phi.reinit(face);
-              
-              VectorizedArray<double> gamma_over_h = 0.0;
-              
-              // compute penalty parameter (TODO: pre-compute)
-              for (unsigned int v=0; v< data.n_active_entries_per_face_batch (face); ++v)
+            phi.reinit(face);
+
+            VectorizedArray<double> gamma_over_h = 0.0;
+
+            // compute penalty parameter (TODO: pre-compute)
+            for (unsigned int v = 0;
+                 v < data.n_active_entries_per_face_batch(face);
+                 ++v)
               {
                 const auto p    = fe.degree;
                 const auto cell = data.get_face_iterator(face, v);
-                  
-                gamma_over_h[v] = (1.0 * p * (p + 1) /
-                 cell.first->extent_in_direction(
-                   GeometryInfo<dim>::unit_normal_direction[cell.second]));
+
+                gamma_over_h[v] =
+                  (1.0 * p * (p + 1) /
+                   cell.first->extent_in_direction(
+                     GeometryInfo<dim>::unit_normal_direction[cell.second]));
               }
-             
-              for(unsigned int q = 0; q < phi.n_q_points; ++q)
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
-                 const  auto p_vect = phi.quadrature_point(q);
-                 Tensor<1, dim, VectorizedArray<double>> f_grad;
-                for (unsigned int v=0; v<VectorizedArray<double>::size(); ++v)
+                const auto p_vect = phi.quadrature_point(q);
+                Tensor<1, dim, VectorizedArray<double>> f_grad;
+                for (unsigned int v = 0; v < VectorizedArray<double>::size();
+                     ++v)
                   {
                     Point<dim> p;
-                    for (unsigned int d=0; d<dim; ++d)
+                    for (unsigned int d = 0; d < dim; ++d)
                       p[d] = p_vect[d][v];
-                    
+
                     const auto temp = exact_solution.gradient(p);
-                    
-                    for (unsigned int d=0; d<dim; ++d)
+
+                    for (unsigned int d = 0; d < dim; ++d)
                       f_grad[d][v] = temp[d];
                   }
-                  
-                  phi.submit_hessian((-f_grad * phi.get_normal_vector(q)) * outer_product(phi.get_normal_vector(q), phi.get_normal_vector(q)), q);
-                  phi.submit_normal_derivative(gamma_over_h * f_grad * phi.get_normal_vector(q), q);
+
+                phi.submit_hessian((-f_grad * phi.get_normal_vector(q)) *
+                                     outer_product(phi.get_normal_vector(q),
+                                                   phi.get_normal_vector(q)),
+                                   q);
+                phi.submit_normal_derivative(gamma_over_h * f_grad *
+                                               phi.get_normal_vector(q),
+                                             q);
               }
-              
-              phi.integrate(EvaluationFlags::gradients | EvaluationFlags::hessians);
-              
-              phi.distribute_local_to_global(dst);
+
+            phi.integrate(EvaluationFlags::gradients |
+                          EvaluationFlags::hessians);
+
+            phi.distribute_local_to_global(dst);
           }
       },
-              dst, dummy
-      );
+      dst,
+      dummy);
   }
-  
-  
-  
+
+
+
   // @sect4{Solving the linear system and postprocessing}
   //
   // The show is essentially over at this point: The remaining functions are
@@ -459,12 +523,12 @@ namespace Step47
   void BiharmonicProblem<dim>::solve()
   {
     pcout << "   Solving system..." << std::endl;
-    
+
     compute_rhs(system_rhs);
 
-    ReductionControl reduction_cotrol(100, 1e-10, 1e-10);
+    ReductionControl     reduction_cotrol(100, 1e-10, 1e-10);
     SolverCG<VectorType> solver(reduction_cotrol);
-    
+
     // TODO: need a better preconditioner
     solver.solve(*this, solution, system_rhs, PreconditionIdentity());
 
@@ -481,7 +545,7 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::compute_errors()
   {
-      solution.update_ghost_values();
+    solution.update_ghost_values();
     {
       Vector<float> norm_per_cell(triangulation.n_active_cells());
       VectorTools::integrate_difference(mapping,
@@ -496,7 +560,7 @@ namespace Step47
                                           norm_per_cell,
                                           VectorTools::L2_norm);
       pcout << "   Error in the L2 norm           :     " << error_norm
-                << std::endl;
+            << std::endl;
     }
 
     {
@@ -513,7 +577,7 @@ namespace Step47
                                           norm_per_cell,
                                           VectorTools::H1_seminorm);
       pcout << "   Error in the H1 seminorm       : " << error_norm
-                << std::endl;
+            << std::endl;
     }
 
     // Now also compute an approximation to the $H^2$ seminorm error. The actual
@@ -548,31 +612,31 @@ namespace Step47
       std::vector<SymmetricTensor<2, dim>> exact_hessians(n_q_points);
       std::vector<Tensor<2, dim>>          hessians(n_q_points);
       for (auto &cell : dof_handler.active_cell_iterators())
-          if(cell->is_locally_owned())
-        {
-          fe_values.reinit(cell);
-          fe_values[scalar].get_function_hessians(solution, hessians);
-          exact_solution.hessian_list(fe_values.get_quadrature_points(),
-                                      exact_hessians);
+        if (cell->is_locally_owned())
+          {
+            fe_values.reinit(cell);
+            fe_values[scalar].get_function_hessians(solution, hessians);
+            exact_solution.hessian_list(fe_values.get_quadrature_points(),
+                                        exact_hessians);
 
-          double local_error = 0;
-          for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
-            {
-              local_error +=
-                ((exact_hessians[q_point] - hessians[q_point]).norm_square() *
-                 fe_values.JxW(q_point));
-            }
-          error_per_cell[cell->active_cell_index()] = std::sqrt(local_error);
-        }
+            double local_error = 0;
+            for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+              {
+                local_error +=
+                  ((exact_hessians[q_point] - hessians[q_point]).norm_square() *
+                   fe_values.JxW(q_point));
+              }
+            error_per_cell[cell->active_cell_index()] = std::sqrt(local_error);
+          }
 
       const double error_norm =
         VectorTools::compute_global_error(triangulation,
                                           error_per_cell,
                                           VectorTools::L2_norm);
       pcout << "   Error in the broken H2 seminorm: " << error_norm
-                << std::endl;
+            << std::endl;
     }
-      solution.zero_out_ghost_values();
+    solution.zero_out_ghost_values();
   }
 
 
@@ -641,7 +705,7 @@ int main(int argc, char **argv)
     {
       using namespace dealii;
       using namespace Step47;
-      
+
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
       const unsigned int fe_degree = 2;
