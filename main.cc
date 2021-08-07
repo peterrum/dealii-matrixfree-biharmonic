@@ -175,6 +175,8 @@ namespace Step47
 
     Vector<double> solution;
     Vector<double> system_rhs;
+    
+    MatrixFree<dim> matrix_free;
   };
 
 
@@ -225,6 +227,12 @@ namespace Step47
 
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
+    
+    typename MatrixFree<dim>::AdditionalData additional_data;
+    additional_data.mapping_update_flags = update_quadrature_points | update_values;
+    additional_data.mapping_update_flags_inner_faces = update_default;
+    additional_data.mapping_update_flags_boundary_faces = update_quadrature_points | update_gradients | update_hessians;
+    matrix_free.reinit(mapping, dof_handler, constraints, QGauss<1>(fe.degree + 1), additional_data);
   }
 
 
@@ -232,13 +240,6 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::vmult(Vector<double> &dst, const Vector<double> &src) const
   {
-      MatrixFree<dim> matrix_free;
-      typename MatrixFree<dim>::AdditionalData additional_data;
-      additional_data.mapping_update_flags = update_quadrature_points | update_values;
-      additional_data.mapping_update_flags_inner_faces = update_default;
-      additional_data.mapping_update_flags_boundary_faces = update_quadrature_points | update_gradients | update_hessians;
-      matrix_free.reinit(mapping, dof_handler, constraints, QGauss<1>(fe.degree + 1), additional_data);
-      
       dst = 0.0;
       
       matrix_free.template loop <Vector<double>, Vector<double>>(
@@ -355,14 +356,6 @@ namespace Step47
   template <int dim>
   void BiharmonicProblem<dim>::compute_rhs(Vector<double> &dst) const
   {
-      // TODO: move
-      MatrixFree<dim> matrix_free;
-      typename MatrixFree<dim>::AdditionalData additional_data;
-      additional_data.mapping_update_flags = update_quadrature_points | update_values;
-      additional_data.mapping_update_flags_inner_faces = update_default;
-      additional_data.mapping_update_flags_boundary_faces = update_quadrature_points | update_gradients | update_hessians;
-      matrix_free.reinit(mapping, dof_handler, constraints, QGauss<1>(fe.degree + 1), additional_data);
-      
       dst = 0.0;
       
       Vector<double> dummy;
