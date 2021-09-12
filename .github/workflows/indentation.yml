@@ -16,7 +16,7 @@ jobs:
       with:
         source: '.'
         exclude: ''
-        extensions: 'h,c'
+        extensions: 'cc'
         clangFormatVersion: 11
         inplace: true
     - name: code-formating

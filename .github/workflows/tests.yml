@@ -34,7 +34,6 @@ jobs:
 
       - name: Compile
         run: |
-          cd tests
           mkdir build
           cd build
           cmake ../ -DCMAKE_CXX_FLAGS="-Werror"  -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
@@ -42,5 +41,5 @@ jobs:
 
       - name: Test
         run: |
-          cd tests/build
+          cd build
           ctest -V
