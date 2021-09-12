@@ -1,0 +1,46 @@
+name: GitHub CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+  - cron:  '0 0 * * *'
+    
+env:
+  COMPILE_JOBS: 2
+
+jobs:
+  build:
+    name: Build ${{ matrix.build_type }}-dealii:${{ matrix.dealii_version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: ["Debug"]
+        dealii_version: ["master", "v9.3.0"]
+    
+    container:
+      image: dealii/dealii:${{ matrix.dealii_version }}-focal
+
+    steps:
+      - name: Setup
+        run: |
+          sudo chown -R $USER:$USER $GITHUB_WORKSPACE
+          
+      - uses: actions/checkout@v2
+
+      - name: Compile
+        run: |
+          cd tests
+          mkdir build
+          cd build
+          cmake ../ -DCMAKE_CXX_FLAGS="-Werror"  -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          make
+
+      - name: Test
+        run: |
+          cd tests/build
+          ctest -V

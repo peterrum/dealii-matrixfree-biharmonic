@@ -1,7 +1,3 @@
-SET(TARGET "main")
-
-SET(TARGET_SRC main.cc)
-
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8.8)
 
 FIND_PACKAGE(deal.II 8.0 QUIET
@@ -16,7 +12,23 @@ IF(NOT ${deal.II_FOUND})
 ENDIF()
 
 DEAL_II_INITIALIZE_CACHED_VARIABLES()
-PROJECT(${TARGET})
-DEAL_II_INVOKE_AUTOPILOT()
+PROJECT("exmples")
 
+DEAL_II_INITIALIZE_CACHED_VARIABLES()
 
+file(GLOB files "*.cc")
+foreach(file ${files})
+  get_filename_component(app ${file} NAME_WLE)
+
+  ADD_EXECUTABLE(${app} ${file})
+  TARGET_COMPILE_DEFINITIONS(${app} PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  DEAL_II_SETUP_TARGET(${app})
+endforeach()
+
+IF(EXISTS ${CMAKE_SOURCE_DIR}/tests/CMakeLists.txt)
+  SET(DEAL_II_HAVE_TESTS_DIRECTORY TRUE)
+ENDIF()
+
+enable_testing()
+
+DEAL_II_PICKUP_TESTS("tests")

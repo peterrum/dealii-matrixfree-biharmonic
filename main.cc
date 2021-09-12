@@ -96,8 +96,9 @@ namespace Step47
     public:
       static_assert(dim == 2, "Only dim==2 is implemented.");
 
-      virtual double value(const Point<dim> &p,
-                           const unsigned int /*component*/ = 0) const override
+      virtual double
+      value(const Point<dim> &p,
+            const unsigned int /*component*/ = 0) const override
       {
         return std::sin(PI * p[0]) * std::sin(PI * p[1]);
       }
@@ -136,8 +137,9 @@ namespace Step47
     public:
       static_assert(dim == 2, "Only dim==2 is implemented");
 
-      virtual double value(const Point<dim> &p,
-                           const unsigned int /*component*/ = 0) const override
+      virtual double
+      value(const Point<dim> &p,
+            const unsigned int /*component*/ = 0) const override
 
       {
         return 4 * std::pow(PI, 4.0) * std::sin(PI * p[0]) *
@@ -162,16 +164,24 @@ namespace Step47
 
     BiharmonicProblem(const unsigned int fe_degree);
 
-    void run();
-    void vmult(VectorType &dst, const VectorType &src) const;
+    void
+    run();
+    void
+    vmult(VectorType &dst, const VectorType &src) const;
 
   private:
-    void make_grid();
-    void setup_system();
-    void compute_rhs(VectorType &dst) const;
-    void solve();
-    void compute_errors();
-    void output_results(const unsigned int iteration) const;
+    void
+    make_grid();
+    void
+    setup_system();
+    void
+    compute_rhs(VectorType &dst) const;
+    void
+    solve();
+    void
+    compute_errors();
+    void
+    output_results(const unsigned int iteration) const;
 
     ConditionalOStream pcout;
 
@@ -209,7 +219,8 @@ namespace Step47
   // each mesh. Again, both of these are essentially unchanged from many
   // previous tutorial programs.
   template <int dim>
-  void BiharmonicProblem<dim>::make_grid()
+  void
+  BiharmonicProblem<dim>::make_grid()
   {
     GridGenerator::hyper_cube(triangulation, 0., 1.);
     triangulation.refine_global(1);
@@ -222,7 +233,8 @@ namespace Step47
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::setup_system()
+  void
+  BiharmonicProblem<dim>::setup_system()
   {
     dof_handler.distribute_dofs(fe);
 
@@ -301,14 +313,15 @@ namespace Step47
             int n_components,
             typename Number,
             typename VectorizedArrayType>
-  void submit_normal_hessian(FEFaceEvaluation<dim,
-                                              fe_degree,
-                                              n_q_points_1d,
-                                              n_components,
-                                              Number,
-                                              VectorizedArrayType> &phi,
-                             const VectorizedArrayType &            value,
-                             unsigned int                           q)
+  void
+  submit_normal_hessian(FEFaceEvaluation<dim,
+                                         fe_degree,
+                                         n_q_points_1d,
+                                         n_components,
+                                         Number,
+                                         VectorizedArrayType> &phi,
+                        const VectorizedArrayType &            value,
+                        unsigned int                           q)
   {
     phi.submit_hessian(value * outer_product(phi.get_normal_vector(q),
                                              phi.get_normal_vector(q)),
@@ -339,8 +352,8 @@ namespace Step47
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::vmult(VectorType &      dst,
-                                     const VectorType &src) const
+  void
+  BiharmonicProblem<dim>::vmult(VectorType &dst, const VectorType &src) const
   {
     dst = 0.0;
 
@@ -440,7 +453,8 @@ namespace Step47
 
 
   template <int dim>
-  void BiharmonicProblem<dim>::compute_rhs(VectorType &dst) const
+  void
+  BiharmonicProblem<dim>::compute_rhs(VectorType &dst) const
   {
     dst = 0.0;
 
@@ -526,7 +540,8 @@ namespace Step47
   // not overly interesting or novel. The first one simply uses a direct
   // solver to solve the linear system (see also step-29):
   template <int dim>
-  void BiharmonicProblem<dim>::solve()
+  void
+  BiharmonicProblem<dim>::solve()
   {
     pcout << "   Solving system..." << std::endl;
 
@@ -549,7 +564,8 @@ namespace Step47
   // the corresponding solution). In the first two code blocks below,
   // we compute the error in the $L_2$ norm and the $H^1$ semi-norm.
   template <int dim>
-  void BiharmonicProblem<dim>::compute_errors()
+  void
+  BiharmonicProblem<dim>::compute_errors()
   {
     solution.update_ghost_values();
     {
@@ -672,7 +688,8 @@ namespace Step47
   // The same is true for the `run()` function: Just like in previous
   // programs.
   template <int dim>
-  void BiharmonicProblem<dim>::run()
+  void
+  BiharmonicProblem<dim>::run()
   {
     make_grid();
 
@@ -705,7 +722,8 @@ namespace Step47
 // we use requires the element degree to be at least two, we check with
 // an assertion that whatever one sets for the polynomial degree actually
 // makes sense.
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
   try
     {
